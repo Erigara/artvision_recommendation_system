@@ -10,13 +10,16 @@ import ctypes
 import numpy as np
 import pandas as pd
 from scipy import sparse as sps
-from model.sparse_matrix_utills import row_means_nonzero, col_means_nonzero
+from model.sparse_matrix_utills import (row_means_nonzero, 
+                                        col_means_nonzero, 
+                                        norm2, 
+                                        block_mat_mult)
 class ALS:
     """
     Realization of ALS with Weighted-λ-Regularization from 
     "Large-scale Parallel Collaborative Filtering for the Netflix Prize"   
     """
-    def __init__(self, users, items, ratings, features=10, reg_weight = 0.3):
+    def __init__(self, users, items, ratings, features=10, lmbda = 0.3):
         """
         users : object with __getitem__ method
             user ids
@@ -33,19 +36,21 @@ class ALS:
             regularization weight
         
         """
-        self.users = users
-        self.items = items
-        self.ratings = ratings
+        if not (len(users) == len(items) == len(ratings)):
+            raise Warning('users, items, ratings columns must have equal len')
         
         self.row_R = sps.csr_matrix((ratings, (users, items)))
         self.col_R = sps.csc_matrix((ratings, (users, items)))
         
         self.users_len, self.items_len = self.col_R.shape
+        self.n = len(ratings)
         self.features = features
-        self.reg_weight = reg_weight
+        self.lmbda = lmbda
+        
         self.E = np.eye(features)
         
-        np.random.seed(404)
+        np.random.seed(505)
+        # create matrices U and M
         self.U = np.random.random((features, self.users_len))
         self.U[0, :] = row_means_nonzero(self.row_R)
         self.M = np.random.random((features, self.items_len))
@@ -70,9 +75,9 @@ class ALS:
         I_i = self.user_I[i]
         n = len(I_i)
         M_i = self.M[:, I_i]
-        A_i = M_i @ M_i.T + self.reg_weight * n * self.E
+        A_i = M_i @ M_i.T + self.lmbda * n * self.E
         V_i = M_i @ self.row_R[i, I_i].T
-        u_i = np.linalg.lstsq(A_i, V_i, rcond=None)[0]
+        u_i = np.linalg.solve(A_i, V_i)
         return u_i.flatten()
     
     def _compute_m(self, j):
@@ -88,9 +93,9 @@ class ALS:
         I_j = self.item_I[j]
         n = len(I_j)
         U_j = self.U[:, I_j]
-        A_j = U_j @ U_j.T + self.reg_weight * n * self.E
+        A_j = U_j @ U_j.T + self.lmbda * n * self.E
         V_j = U_j @ self.col_R[I_j, j]
-        m_j = np.linalg.lstsq(A_j, V_j, rcond=None)[0]
+        m_j = np.linalg.solve(A_j, V_j)
         return m_j.flatten()
         
     def _compute_matrix_parallel(self, compute_column, length, jobs_per_cpu=1):
@@ -146,9 +151,9 @@ class ALS:
         matrix = np.reshape(np.frombuffer(raw_matrix), (self.features, length))
         return matrix
     
-    def _compute_matrix_worker(self, func, length, queue, raw_matrix):
+    def _compute_matrix_worker(self, compute_column, length, queue, raw_matrix):
         """
-        
+        Worker to compute columns of matrix
         """
         matrix = np.reshape(np.frombuffer(raw_matrix), (self.features, length))
         
@@ -158,7 +163,7 @@ class ALS:
                 break
             start, stop = job[0], job[0] + job[1]
             for i in range(start, stop):
-                matrix[:, i] = func(i)
+                matrix[:, i] = compute_column(i)
             
             queue.task_done()
         queue.task_done()
@@ -188,8 +193,10 @@ class ALS:
             self.U = self._compute_matrix_parallel(self._compute_u,
                                                   self.users_len)
             
+            
             self.M = self._compute_matrix_parallel(self._compute_m,
                                                   self.items_len)
+            
             loss = self.eval_loss()
             if last_loss and abs(loss - last_loss) < eps:
                 last_loss = loss
@@ -202,27 +209,43 @@ class ALS:
                 else:
                     print("Train loss: ", loss)
                 last_loss = loss
-        print("train complete! epochs={} loss={}".format(epoch+1, last_loss))
+                print("RMSE={}".format(self.eval_rmse()))
+                
+                
+        print("\n========== Train complete! ==========")
+        print("Epochs={}".format(epoch+1))
+        print("RMSE={}".format(self.eval_rmse()))
             
             
             
     def eval_loss(self):
-        def reg(matrix, length, I):
-            return np.sum([len(I[i]) * np.sum(matrix[:, i]**2) for i in range(length)])
-        
-        prediction = np.array(self.predict(self.users, self.items))
-        rating = np.array(self.ratings)
-        loss = (np.mean((rating - prediction)**2) 
-                + self.reg_weight * (reg(self.U, self.users_len, self.user_I)
-                                     + reg(self.M, self.items_len, self.item_I)))
+        # Tikhonov regularization matrices
+        Gu = self.U @ sps.diags([len(i) for i in self.user_I])
+        Gm = self.M @ sps.diags([len(i) for i in self.item_I])
+        loss = self.eval_rmse() + self.lmbda*((Gu**2).sum() + (Gm**2).sum())
         return loss
     
+    def eval_rmse(self, block_size=1024):
+        def mask_function():
+            # create mask matrix
+            Mask = self.col_R.copy()
+            Mask[Mask.nonzero()] = 1
+            def mask_apply(submatrix, i, j):
+                hight, width = submatrix.shape
+                submatrix = np.multiply(Mask[i:i+hight, j:j+width].toarray(), submatrix)
+                return submatrix
+            return mask_apply
+        # very slow operation
+        R_hat = block_mat_mult(self.U.T, self.M, 
+                               block_size=block_size,
+                               mask_function=mask_function())
+        
+        rmse = norm2(self.col_R - R_hat)/self.n
+        return rmse
+    
     def predict(self, users, items):
-        rating = []
-        for user, item in zip(users, items):
-            r = (self.U[:, user].T @ self.M[:, item])
-            rating.append(r)
-        return rating
+        R_hat = block_mat_mult(self.U.T, self.M, block_size=1024)
+        return R_hat
 
 
     
