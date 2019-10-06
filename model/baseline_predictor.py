@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-
 @author: erigara
+
+Module implement unpersonalized predictor based on mean and user's/item's deviation from mean
 """
+
 from multiprocessing import Pool
+import numpy as np
 
 class BaselinePredictor:
-    # TODO add gpu computations
     """
     Based on mean, user_means, item_means compute predicted rating
     rating(i, j) = user_means(i) + item_mean(j) - mean
@@ -16,10 +18,7 @@ class BaselinePredictor:
     def __init__(self, 
                  mean=0, 
                  user_means=[], 
-                 item_means=[],
-                 trunc=False,
-                 lower_bound=1, 
-                 upper_bound=5):
+                 item_means=[]):
         """
         Set predictor parameters
         mean : float
@@ -33,19 +32,12 @@ class BaselinePredictor:
         """
         self.mean = mean
         self.item_means = item_means
-        self.user_means = user_means
-        self.trunc = trunc
-        self.lower_bound = lower_bound
-        self.upper_bound = upper_bound
-        
+        self.user_means = user_means    
         
     def set_params(self, 
                    mean=None, 
                    user_means=None, 
-                   item_means=None, 
-                   lower_bound=None, 
-                   upper_bound=None,
-                   trunc=None):
+                   item_means=None):
         """
         Change predictor parameters
         mean : float
@@ -64,9 +56,6 @@ class BaselinePredictor:
         self.mean = update_value(self.mean, mean)
         self.item_means = update_value(self.item_means, item_means)
         self.user_means = update_value(self.user_means, user_means)
-        self.trunc = update_value(self.trunc, upper_bound)
-        self.lower_bound = update_value(self.lower_bound, lower_bound)
-        self.upper_bound = update_value(self.upper_bound, upper_bound)
         
         
     
@@ -78,22 +67,7 @@ class BaselinePredictor:
             
         return : float
             baseline_rating = user_means(user) + item_mean(item) - mean
-        """
-        def truncate(rating):
-            """
-            rating : float
-            
-            return : float
-                truncate_rating = rating      if lower_bound <= rating <= upper_bound
-                                = lower_bound if lower_bound > rating
-                                = upper_bound if rating > upper_bound
-            """
-            if rating < self.lower_bound:
-                rating = self.lower_bound
-            if rating > self.upper_bound:
-                rating = self.upper_bound
-            return rating
-        
+        """        
         try:
             user_mean = self.user_means[user]
             item_mean = self.item_means[item]
@@ -101,9 +75,6 @@ class BaselinePredictor:
             raise Warning('invalid ids pair ({}, {}) in user_item_iterable'.format(user, item))
             
         baseline_rating = user_mean + item_mean - self.mean 
-        
-        if self.trunc:
-            baseline_rating = truncate(baseline_rating)
         
         return baseline_rating
     
@@ -115,8 +86,8 @@ class BaselinePredictor:
             iterable structure of (user, item) pairs
             [(u_1, i_1), ... , (u_n, i_n)]
             
-        return : list
+        return : np.array
             list of baseline_ratings
         """
         with Pool() as p:
-            return list(p.starmap(self.predict_single, user_item_iterable))
+            return np.fromiter(p.starmap(self.predict_single, user_item_iterable), dtype=np.float)
