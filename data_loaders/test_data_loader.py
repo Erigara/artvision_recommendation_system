@@ -6,7 +6,7 @@
 """
 
 import pandas as pd
-from collections import namedtuple
+from .rating_data import RatingData
 
 def load_data(path, names):
     '''
@@ -17,16 +17,10 @@ def load_data(path, names):
     
     names : array-like
         column names to use, 
-        column names must be in following order: [user_ids, items_ids, rating, timestamp] 
+        column names must be in following order: [user_ids, items_ids, rating, prediction, timestamp] 
     
-    return : DF_data - namedtuple
-        DF_data structure:
-            df : pd.Dataframe 
-                loaded dataframe
-            user_ids : str
-                name of new user_ids column
-            item_ids : str
-                name of new item_ids column
+    return : RatingData
+        dowloaded rating data
     '''
     df = pd.read_csv('../data/ratings.csv')
     
@@ -35,5 +29,5 @@ def load_data(path, names):
     df[user_ids] = df[names[0]].rank(method='dense').astype('int64') - 1
     df[item_ids] = df[names[1]].rank(method='dense').astype('int64') - 1
     
-    DF_data = namedtuple('DF_data', ['df', 'user_ids', 'item_ids'])
-    return DF_data(df, user_ids, item_ids)
+    names[0], names[1] = user_ids, item_ids
+    return RatingData(df, *names)

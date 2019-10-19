@@ -6,26 +6,29 @@
 Module provide postprocessing functions
 """
 
-def truncate_rating(ratings, lower_bound, upper_bound):
+def truncate_rating(data, lower_bound, upper_bound):
             """
-            ratings : np.array
-                array of ratings
+            Set values in column predictions so that every value  lower_bound <= value <= upper_bound
             
+            data : RatingData
+                rating data
+                
             lower_bound : float
                 smallest possible rating
             
             upper_bound : float
                 biggest possible rating
                 
-            return : np.array
-                return array where every rating 
+            return : RatingData
+                return RatingData where every rating in col prediction
                                 = rating      if lower_bound <= rating <= upper_bound
                                 = lower_bound if lower_bound > rating
                                 = upper_bound if rating > upper_bound
             """
-            ratings = ratings.copy()
+            ratings = data.df[data.prediction_col_name].to_numpy()
             lower = ratings < lower_bound
             ratings[lower] = lower_bound
             higher = ratings > upper_bound
             ratings[higher] = upper_bound
-            return ratings
+            data.df[data.prediction_col_name] = ratings
+            return data
