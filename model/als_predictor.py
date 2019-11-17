@@ -26,6 +26,11 @@ class ALS:
     Implement Realization of ALS with Weighted-λ-Regularization from
     "Large-scale Parallel Collaborative Filtering for the Netflix Prize"
     """
+    TrainStruct = namedtuple('TrainStruct', ['user_I',
+                                         'item_I',
+                                         'users_len',
+                                         'items_len'])
+    
     def __init__(self, features=10, regularization='l2', lmbda = 0.3):
         """
         train_data : RatingData
@@ -60,10 +65,7 @@ class ALS:
         # matrix that represent items
         self.M = None
         # additional data structures
-        self.TrainStruct = namedtuple('TrainStruct', ['user_I',
-                                                      'item_I',
-                                                      'users_len',
-                                                      'items_len'])
+        
     def predict(self, data):
         """
         Predict rating for each (user, item) indecies pair in users, items
@@ -165,15 +167,17 @@ class ALS:
         train_data : RatingData
             rating data to train
             
-        return : self.TrainStruct
+        return : ALS.TrainStruct
             namedtuple of additional data structures
         """
         users_len = int(max(train_data.df[train_data.user_col_name]) + 1)
         items_len = int(max(train_data.df[train_data.item_col_name]) + 1)
 
         # init matrices U and M
-        self.U = self.init_U(train_data, users_len)
-        self.M = self.init_M(train_data, items_len)
+        if self.U is None:    
+            self.U = self.init_U(train_data, users_len)
+        if self.M is None:
+            self.M = self.init_M(train_data, items_len)
         
         # create user_I dict containing for key user np.array of items witch user rate
         user_I = defaultdict(lambda : np.array([], dtype=int))
@@ -187,7 +191,7 @@ class ALS:
         for item in sorted(item_groups.groups):
             item_I[item] = item_groups.get_group(item).to_numpy().astype(int)
         
-        return self.TrainStruct(user_I, item_I, users_len, items_len)
+        return ALS.TrainStruct(user_I, item_I, users_len, items_len)
 
     def init_U(self, train_data, users_len):
         """
@@ -225,7 +229,6 @@ class ALS:
         col_R = sps.csc_matrix((train_data.df[train_data.rating_col_name], 
                                 (train_data.df[train_data.user_col_name], 
                                  train_data.df[train_data.item_col_name])))
-
         M = np.random.randn(self.features, items_len)
         M[0, :] = col_means_nonzero(col_R)
         return M
@@ -361,3 +364,12 @@ class ALS:
         """
         penalty = self.lmbda * ((self.U**2).sum() + (self.M**2).sum())
         return penalty
+    
+    def get_shape(self):
+        """
+        Return (self.U.shape[1], self.M.shape[1]) or (None, None)
+        """
+        if self.M is None or self.U is None:
+            return (None, None)
+        else:
+            return (self.U.shape[1], self.M.shape[1])
