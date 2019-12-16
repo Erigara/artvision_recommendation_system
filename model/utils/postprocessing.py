@@ -5,6 +5,8 @@
 
 Module provide postprocessing functions
 """
+import pandas as pd
+from data_loaders.rating_data import RatingData
 
 def truncate_rating(data, lower_bound, upper_bound):
             """
@@ -32,3 +34,42 @@ def truncate_rating(data, lower_bound, upper_bound):
             ratings[higher] = upper_bound
             data.df[data.prediction_col_name] = ratings
             return data
+        
+
+def make_recommendation(model, user_id, top_n=5):
+    """
+    Return top n predicted ratings for user_id across all items
+    
+    model : obj
+        model to make predictions
+    
+    user_id : int
+        user id
+    
+    top_n : int
+        amount of movies in recommendations
+        
+    return : RatingData
+        rating_data of top items for user
+    """
+    item_ids = model.get_item_ids()
+    if item_ids:
+        df = pd.DataFrame({'user_id' : [user_id for item_id in item_ids], 
+                           'item_id' : [item_id for item_id in item_ids],
+                           'rating'  : [0       for item_id in item_ids]})
+        
+        user_data = RatingData(df, 'user_id', 
+                                   'item_id', 
+                                   'rating',
+                                   'prediction',
+                                   'timestamp')
+        user_data = model.predict(user_data)
+        top_n_df = user_data.df.nlargest(top_n, user_data.prediction_col_name)
+        
+        return RatingData(top_n_df, 'user_id', 
+                                    'item_id', 
+                                    'rating',
+                                    'prediction',
+                                    'timestamp')
+    else:
+        return None

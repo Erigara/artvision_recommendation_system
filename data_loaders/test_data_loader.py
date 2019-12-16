@@ -6,7 +6,7 @@
 """
 
 import pandas as pd
-from .rating_data import RatingData
+from data_loaders.rating_data import RatingData
 
 def load_data(path, names):
     '''
@@ -22,12 +22,15 @@ def load_data(path, names):
     return : RatingData
         dowloaded rating data
     '''
-    df = pd.read_csv('../data/ratings.csv')
+    df = pd.read_csv('../data/ratings.csv', 
+                     names=[names[0], names[1], names[2], names[4]], 
+                     skiprows=1)
     
     # create new sequential indeces for users and items
+    '''
     user_ids, item_ids = 'new_' + names[0], 'new_' + names[1]
     df[user_ids] = df[names[0]].rank(method='dense').astype('int64') - 1
     df[item_ids] = df[names[1]].rank(method='dense').astype('int64') - 1
-    
     names[0], names[1] = user_ids, item_ids
+    '''
     return RatingData(df, *names)

@@ -9,23 +9,48 @@ Module implement unpersonalized predictor based on mean and user's/item's deviat
 from multiprocessing import Pool
 import pandas as pd
 import numpy as np
+from model.utils.metrics import reg_rmse, reg_se
+from model import Losses
+
 import logging
+
 class BaselinePredictor:
     """
     Based on mean, user_means, item_means compute predicted rating
     rating(i, j) = user_means(i) + item_mean(j) - mean
     
     """
-    def __init__(self, train_data):
+    def __init__(self):
         """
         Set predictor parameters
     
         train_data : RatingData
             rating data to train
         """
-        self.mean = train_data.df[train_data.rating_col_name].mean()
-        self.user_means = np.array(train_data.df.groupby(train_data.user_col_name).mean())
-        self.item_means = np.array(train_data.df.groupby(train_data.item_col_name).mean())
+        self.mean = None
+        self.user_means = None
+        self.item_means = None
+    
+    def predict(self, data):
+        """
+        Compute baseline_rating for each user, item pair in user_item_iterable
+        
+        data : RatingData
+            rating data
+            
+        return : np.array
+            list of baseline_ratings
+        """
+        if self.mean is None or self.item_means is None or self.user_means is None:
+            logging.error('predictor must be fitted first!')
+            raise RuntimeError('predictor must be fitted first!')
+            
+        with Pool() as p:
+            data.df[data.prediction_col_name] = np.fromiter(p.starmap(self.predict_single, 
+                                                                      zip(data.df[data.user_col_name], 
+                                                                          data.df[data.item_col_name])), 
+                                                            dtype=np.float)
+        return data
     
     def predict_single(self, user, item):
         """
@@ -47,19 +72,45 @@ class BaselinePredictor:
             
         return baseline_rating
     
-    def predict(self, data):
-        """
-        Compute baseline_rating for each user, item pair in user_item_iterable
+    def fit(self, train_data, test_data, test_metric=reg_rmse):
+        self.mean = train_data.df[train_data.rating_col_name].mean()
+        self.user_means = train_data.df.groupby(
+                train_data.user_col_name).mean()[train_data.rating_col_name]
+        self.item_means = train_data.df.groupby(
+                train_data.item_col_name).mean()[train_data.rating_col_name]
         
-        data : RatingData
-            rating data
-            
-        return : np.array
-            list of baseline_ratings
+        train_loss = reg_se(self.predict(train_data))
+        test_data = self.predict(test_data)
+        test_data.df[test_data.prediction_col_name].fillna(0)
+        test_loss =  test_metric(test_data
+                                 )
+        return Losses([train_loss,], [test_loss,])
+    
+    def get_shape(self):
         """
-        with Pool() as p:
-            data.df[data.prediction_col_name] = np.fromiter(p.starmap(self.predict_single, 
-                                                                      zip(data.df[data.user_col_name], 
-                                                                          data.df[data.item_col_name])), 
-                                                            dtype=np.float)
-        return data
+        Return (len(self.user_means), len(self.item_means)) or (None, None)
+        """
+        if self.user_means is None or self.item_means is None:
+            return (None, None)
+        else:
+            return (len(self.user_means), len(self.item_means))
+
+    def get_user_ids(self):
+        """
+        Return: 
+            list of user ids used in model
+        """
+        if self.user_means:
+            return self.user_means.keys()
+        else:
+            return None
+
+    def get_item_ids(self):
+        """
+        Return:
+            list of model ids used in model
+        """
+        if self.item_means:
+            return self.item_means.keys()
+        else:
+            return None

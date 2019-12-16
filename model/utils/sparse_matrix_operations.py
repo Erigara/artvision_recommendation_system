@@ -9,9 +9,6 @@ Module provide functions to deal with sparse matrix
 import scipy.sparse as sps
 import numpy as np
 
-import logging
-import time
-logging.basicConfig(level = logging.DEBUG)
 
 
 def row_means_nonzero(inp_matrix):
@@ -25,8 +22,10 @@ def row_means_nonzero(inp_matrix):
     """
     matrix = inp_matrix.tocsr()
     nonzero_rows = np.diff(matrix.indptr)
+    nonzero_ids = nonzero_rows != 0
     sums = np.array(matrix.sum(axis=1)).flatten()
-    means = np.nan_to_num(sums / nonzero_rows)
+    means = sums
+    means[nonzero_ids] /= nonzero_rows[nonzero_ids]
     return means
 
 def col_means_nonzero(inp_matrix):
@@ -40,8 +39,10 @@ def col_means_nonzero(inp_matrix):
     """
     matrix = inp_matrix.tocsc() 
     nonzero_cols = np.diff(matrix.indptr)
+    nonzero_ids = nonzero_cols != 0
     sums = np.array(matrix.sum(axis=0)).flatten()
-    means = np.nan_to_num(sums / nonzero_cols)
+    means = sums
+    means[nonzero_ids] /= nonzero_cols[nonzero_ids]
     return means        
 
 def block_mat_mult(A, B, block_size=1024, mask_function=None):
@@ -64,35 +65,19 @@ def block_mat_mult(A, B, block_size=1024, mask_function=None):
     n = A.shape[0]
     m = B.shape[1]
     C = sps.lil_matrix((n, m))
-    mask_func_time = 0
-    assigment_time = 0
-    mult_time = 0
+    
     for i in range(0, n, block_size):
         for j in range(0, m, block_size):
-
-            mult_time_start = time.time()
             C_block =  A[i : i + block_size, :] @ B[:, j : j + block_size]
-            mult_time_end = time.time()
             
             hight, width = C_block.shape
             if mask_function:
-                mask_func_start = time.time()
                 C_block = mask_function(C_block, i, j)
-                mask_func_end = time.time()
-            
+
             # TODO bottleneck operation
-            assigment_time_start = time.time()
             C[i : i + hight, j : j + width] = C_block
-            assigment_time_end = time.time()
-            
-            mult_time += mult_time_end - mult_time_start
-            assigment_time += assigment_time_end - assigment_time_start
-            mask_func_time += mask_func_end - mask_func_start
             
     C = C.tocsc()
-    logging.debug("MULT TIME : {}".format(mult_time))
-    logging.debug("ASSIGMENT TIME : {}".format(assigment_time))
-    logging.debug("MUSK FUNC TIME : {}".format(mask_func_time))
     return C
     
     
