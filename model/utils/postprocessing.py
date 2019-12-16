@@ -52,11 +52,11 @@ def make_recommendation(model, user_id, top_n=5):
     return : RatingData
         rating_data of top items for user
     """
-    users_len, items_len = model.get_shape()
-    if items_len:
-        df = pd.DataFrame({'user_id' : [user_id for item_id in range(items_len)], 
-                           'item_id' : [item_id for item_id in range(items_len)],
-                           'rating'  : [0       for item_id in range(items_len)]})
+    item_ids = model.get_item_ids()
+    if item_ids:
+        df = pd.DataFrame({'user_id' : [user_id for item_id in item_ids], 
+                           'item_id' : [item_id for item_id in item_ids],
+                           'rating'  : [0       for item_id in item_ids]})
         
         user_data = RatingData(df, 'user_id', 
                                    'item_id', 

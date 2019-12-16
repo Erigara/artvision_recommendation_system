@@ -26,10 +26,12 @@ class ALS:
     Implement Realization of ALS with Weighted-λ-Regularization from
     "Large-scale Parallel Collaborative Filtering for the Netflix Prize"
     """
-    TrainStruct = namedtuple('TrainStruct', ['user_I',
-                                         'item_I',
-                                         'users_len',
-                                         'items_len'])
+    TrainStruct = namedtuple('TrainStruct', ['compute_u',
+                                             'compute_m',
+                                             'user_I',
+                                             'item_I',
+                                             'users_len',
+                                             'items_len'])
     
     def __init__(self, features=10, regularization='l2', lmbda = 0.3):
         """
@@ -46,7 +48,6 @@ class ALS:
         lmbda : float
             regularization weight
         
-        !!! To work properly ids must start form 0.
         """
 
         if regularization == 'wl2':
@@ -60,11 +61,15 @@ class ALS:
 
         self.features = features
         self.lmbda = lmbda
+        # init?
+        self.initilized = False
         # matrix that represent users
         self.U = None
         # matrix that represent items
         self.M = None
-        # additional data structures
+        # use inner sequential dense ids
+        self.user_ids_mapping = None
+        self.item_ids_mapping = None
         
     def predict(self, data):
         """
@@ -76,23 +81,33 @@ class ALS:
         return : np.array
             predicted ratings
         """
-        if self.M is None or self.U is None:
+        if not self.initilized:
             logging.error('predictor must be fitted first!')
             raise RuntimeError('predictor must be fitted first!')
             
         ratings_hat = []
         for user, item in zip(data.df[data.user_col_name], data.df[data.item_col_name]):
-            try:
-                rating_hat = np.dot(self.U[:, user], self.M[:, item])
-            except IndexError:
-                logging.warning('invalid ids pair ({}, {}) in user_item_iterable'.format(user, item))
-                rating_hat = np.nan
+            rating_hat = self.predict_single(user, item)
             ratings_hat.append(rating_hat)
 
         rating_hat = np.array(ratings_hat)
         
         data.df[data.prediction_col_name] = rating_hat
         return data
+    
+    def predict_single(self, user, item):
+        if not self.initilized:
+            logging.error('predictor must be fitted first!')
+            raise RuntimeError('predictor must be fitted first!')
+        try:
+            # map ids to inner ids
+            dense_user = self.user_ids_mapping[user]
+            dense_item = self.item_ids_mapping[item]
+            rating_hat = np.dot(self.U[:, dense_user], self.M[:, dense_item])
+        except KeyError:
+            #logging.warning('invalid ids pair ({}, {}) in user_item_iterable'.format(user, item))
+            rating_hat = np.nan
+        return rating_hat
             
     def fit(self, train_data,
                   test_data,
@@ -124,7 +139,7 @@ class ALS:
         train_start_time = time.time()
 
         for epoch in range(epochs):
-            self.optimization_step(train_data, train_struct)
+            self.optimization_step(train_struct)
             self.train_data = self.predict(train_data)
             loss = reg_se(train_data, penalty=self.reg_penalty(train_struct))
             
@@ -170,30 +185,49 @@ class ALS:
         return : ALS.TrainStruct
             namedtuple of additional data structures
         """
-        users_len = int(max(train_data.df[train_data.user_col_name]) + 1)
-        items_len = int(max(train_data.df[train_data.item_col_name]) + 1)
-
+        user_ids = train_data.df[train_data.user_col_name]
+        item_ids = train_data.df[train_data.item_col_name]
+        
+        dense_user_ids = user_ids.rank(method='dense').astype('int64') - 1
+        dense_item_ids = item_ids.rank(method='dense').astype('int64') - 1
+        
+        self.user_ids_mapping = dict(user_id_pair for user_id_pair in zip(user_ids, dense_user_ids))
+        self.item_ids_mapping = dict(item_id_pair for item_id_pair in zip(item_ids, dense_item_ids))
+        
+        
+        ratings = train_data.df[train_data.rating_col_name]
+        
+        users_len = int(max(dense_user_ids) + 1)
+        items_len = int(max(dense_item_ids) + 1)
+        
         # init matrices U and M
         if self.U is None:    
-            self.U = self.init_U(train_data, users_len)
+            self.U = self.init_U(dense_user_ids, dense_item_ids, ratings, users_len)
         if self.M is None:
-            self.M = self.init_M(train_data, items_len)
+            self.M = self.init_M(dense_user_ids, dense_item_ids, ratings, items_len)
         
+        tmp_df = pd.DataFrame({train_data.user_col_name : dense_user_ids,
+                               train_data.item_col_name : dense_item_ids})
         # create user_I dict containing for key user np.array of items witch user rate
         user_I = defaultdict(lambda : np.array([], dtype=int))
-        user_groups = train_data.df.groupby(train_data.user_col_name)[train_data.item_col_name]
+        user_groups = tmp_df.groupby(train_data.user_col_name)[train_data.item_col_name]
         for user in sorted(user_groups.groups):
             user_I[user] = user_groups.get_group(user).to_numpy().astype(int)
         
         # create item_I dict containing for key item np.array of users whom rate this item
         item_I = defaultdict(lambda : np.array([], dtype=int))
-        item_groups = train_data.df.groupby(train_data.item_col_name)[train_data.user_col_name]
+        item_groups = tmp_df.groupby(train_data.item_col_name)[train_data.user_col_name]
         for item in sorted(item_groups.groups):
             item_I[item] = item_groups.get_group(item).to_numpy().astype(int)
         
-        return ALS.TrainStruct(user_I, item_I, users_len, items_len)
+        compute_u = self.create_compute_u(dense_user_ids, dense_item_ids, ratings, user_I)
+        compute_m = self.create_compute_m(dense_user_ids, dense_item_ids, ratings, item_I)
 
-    def init_U(self, train_data, users_len):
+        self.initilized = True
+
+        return ALS.TrainStruct(compute_u, compute_m, user_I, item_I, users_len, items_len)
+
+    def init_U(self, users, items, ratings, users_len):
         """
         Initialize matrix U so that it first row contain user's means
         
@@ -206,14 +240,14 @@ class ALS:
         return : np.array
             initilized matrix U
         """
-        row_R = sps.csr_matrix((train_data.df[train_data.rating_col_name], 
-                                (train_data.df[train_data.user_col_name], 
-                                 train_data.df[train_data.item_col_name])))
+        row_R = sps.csr_matrix((ratings, 
+                                (users, 
+                                 items)))
         U = np.random.randn(self.features, users_len)
         U[0, :] = row_means_nonzero(row_R)
         return U
     
-    def init_M(self, train_data, items_len):
+    def init_M(self, users, items, ratings, items_len):
         """
         Initialize matrix M so that it first row contain item's means
 
@@ -226,14 +260,14 @@ class ALS:
         return : np.array
             initilized matrix M
         """
-        col_R = sps.csc_matrix((train_data.df[train_data.rating_col_name], 
-                                (train_data.df[train_data.user_col_name], 
-                                 train_data.df[train_data.item_col_name])))
+        col_R = sps.csc_matrix((ratings, 
+                                (users, 
+                                 items)))
         M = np.random.randn(self.features, items_len)
         M[0, :] = col_means_nonzero(col_R)
         return M
 
-    def optimization_step(self, train_data, train_struct):
+    def optimization_step(self, train_struct):
         """
         Perform single optimization step op algorithm.
         
@@ -243,19 +277,17 @@ class ALS:
         train_struct : self.TrainStruct
             namedtuple of additional data structures
         """
-        compute_U = ComputeMatrix(lambda : self.create_compute_u(train_data, 
-                                                                 train_struct.user_I), 
+        compute_U = ComputeMatrix(lambda : train_struct.compute_u, 
                                   self.features, 
                                   train_struct.users_len)
-        compute_M = ComputeMatrix(lambda : self.create_compute_m(train_data, 
-                                                                 train_struct.item_I), 
+        compute_M = ComputeMatrix(lambda : train_struct.compute_m, 
                                   self.features, 
                                   train_struct.items_len)
 
         self.U = compute_U.compute_parallel()
         self.M = compute_M.compute_parallel()
   
-    def create_compute_u(self, train_data, user_I):
+    def create_compute_u(self, users, items, ratings, user_I):
         """
         Create function to compute column of U by it's index
         
@@ -268,10 +300,9 @@ class ALS:
         return : function
             function to compute columns of U
         """
-        M = self.M
-        row_R = sps.csr_matrix((train_data.df[train_data.rating_col_name], 
-                                (train_data.df[train_data.user_col_name], 
-                                 train_data.df[train_data.item_col_name])))
+        row_R = sps.csr_matrix((ratings, 
+                                (users, 
+                                 items)))
         E = np.eye(self.features)
         lmbda = self.lmbda
         
@@ -287,7 +318,7 @@ class ALS:
             """
             I_i = user_I[i]
             n_i = len(I_i) if self.regularization == 'wl2' else 1
-            M_i = M[:, I_i]
+            M_i = self.M[:, I_i]
             A_i = M_i @ M_i.T + lmbda * n_i * E
             V_i = M_i @ row_R[i, I_i].T
             u_i = np.linalg.solve(A_i, V_i)
@@ -295,7 +326,7 @@ class ALS:
         
         return compute_u
     
-    def create_compute_m(self, train_data, item_I):
+    def create_compute_m(self, users, items, ratings, item_I):
         """
         Create function to compute column of M by it's index
         
@@ -307,11 +338,10 @@ class ALS:
             
         return : function
             function to compute columns of M
-        """
-        U = self.U        
-        col_R = sps.csc_matrix((train_data.df[train_data.rating_col_name], 
-                                (train_data.df[train_data.user_col_name], 
-                                 train_data.df[train_data.item_col_name])))
+        """      
+        col_R = sps.csc_matrix((ratings, 
+                                (users, 
+                                 items)))
         E = np.eye(self.features)
         lmbda = self.lmbda
         
@@ -326,8 +356,8 @@ class ALS:
                 new column j of matrix M
             """
             I_j = item_I[j]
-            n = n = len(I_j) if self.regularization == 'wl2' else 1
-            U_j = U[:, I_j]
+            n = len(I_j) if self.regularization == 'wl2' else 1
+            U_j = self.U[:, I_j]
             A_j = U_j @ U_j.T + lmbda * n * E
             V_j = U_j @ col_R[I_j, j]
             m_j = np.linalg.solve(A_j, V_j)
@@ -373,3 +403,23 @@ class ALS:
             return (None, None)
         else:
             return (self.U.shape[1], self.M.shape[1])
+
+    def get_user_ids(self):
+        """
+        Return: 
+            list of user ids used in model
+        """
+        if self.user_ids_mapping:
+            return self.user_ids_mapping.keys()
+        else:
+            return None
+
+    def get_item_ids(self):
+        """
+        Return:
+            list of model ids used in model
+        """
+        if self.item_ids_mapping:
+            return self.item_ids_mapping.keys()
+        else:
+            return None

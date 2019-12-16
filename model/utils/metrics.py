@@ -46,6 +46,7 @@ def reg_se(data, penalty=0):
 def NDCG(data, by):
     """
     Compute NDCG
+
     data : RatingData
     
     by : str

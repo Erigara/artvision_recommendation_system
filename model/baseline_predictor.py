@@ -94,3 +94,23 @@ class BaselinePredictor:
             return (None, None)
         else:
             return (len(self.user_means), len(self.item_means))
+
+    def get_user_ids(self):
+        """
+        Return: 
+            list of user ids used in model
+        """
+        if self.user_means:
+            return self.user_means.keys()
+        else:
+            return None
+
+    def get_item_ids(self):
+        """
+        Return:
+            list of model ids used in model
+        """
+        if self.item_means:
+            return self.item_means.keys()
+        else:
+            return None
