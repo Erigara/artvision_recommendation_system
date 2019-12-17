@@ -2,6 +2,8 @@
 # -*- coding: utf-8 -*-
 """
 @author: erigara
+
+Download ratings from database and upload predictions 
 """
 import psycopg2
 from psycopg2 import sql
