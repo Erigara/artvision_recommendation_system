@@ -410,7 +410,7 @@ class ALS:
             list of user ids used in model
         """
         if self.user_ids_mapping:
-            return self.user_ids_mapping.keys()
+            return list(self.user_ids_mapping.keys())
         else:
             return None
 
@@ -420,6 +420,6 @@ class ALS:
             list of model ids used in model
         """
         if self.item_ids_mapping:
-            return self.item_ids_mapping.keys()
+            return list(self.item_ids_mapping.keys())
         else:
             return None

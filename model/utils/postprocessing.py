@@ -55,8 +55,7 @@ def make_recommendation(model, user_id, top_n=5):
     item_ids = model.get_item_ids()
     if item_ids:
         df = pd.DataFrame({'user_id' : [user_id for item_id in item_ids], 
-                           'item_id' : [item_id for item_id in item_ids],
-                           'rating'  : [0       for item_id in item_ids]})
+                           'item_id' : [item_id for item_id in item_ids]})
         
         user_data = RatingData(df, 'user_id', 
                                    'item_id', 

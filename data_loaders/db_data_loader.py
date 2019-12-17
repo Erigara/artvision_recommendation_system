@@ -23,27 +23,55 @@ def load_data(host, port, dbname, table, columns, user, password):
 
     
     columns : array-like
-        column names to use, 
+        column names to use, u
         column names must be in following order: [user_id, item_id, rating, prediction, timestamp] 
     
     return : RatingData
         dowloaded rating data
     '''
-    conn = psycopg2.connect(host=host,
+    with psycopg2.connect(host=host,
                             port=port,
                             dbname=dbname,
                             user=user,
-                            password=password)
-    cursor = conn.cursor(name='record_fetcher')
-    cursor.itersize = 20000
-    template_query = sql.SQL("SELECT {user_id}, {item_id}, {rating}, {timestamp} FROM {table}")
-    query = template_query.format(user_id=sql.Identifier(columns[0]),
+                            password=password) as conn:
+        with conn.cursor(name='record_fetcher') as cursor:
+            cursor.itersize = 20000
+            template_query = sql.SQL("SELECT {user_id}, {item_id}, {rating}, {timestamp} FROM {table}")
+            query = template_query.format(user_id=sql.Identifier(columns[0]),
                                   item_id=sql.Identifier(columns[1]),
                                   rating=sql.Identifier(columns[2]),
                                   timestamp=sql.Identifier(columns[4]),
                                   table=sql.Identifier(table))
-    cursor.execute(query)
-    df = pd.DataFrame(data=cursor, columns=[columns[0], columns[1], columns[2], columns[4]])
-    conn.close()
-    
+            cursor.execute(query)
+            df = pd.DataFrame(data=cursor, columns=[columns[0], columns[1], columns[2], columns[4]])
     return RatingData(df, *columns)
+
+
+def upload_data(rating_data, host, port, dbname, table, columns, user, password):
+    '''
+    Read rating data from db connection
+
+    
+    columns : array-like
+        column names to use, u
+        column names must be in following order: [user_id, item_id, rating, prediction, timestamp] 
+    
+    return : RatingData
+        dowloaded rating data
+    '''
+    records = rating_data.df.itertuples(index=False)
+    with psycopg2.connect(host=host,
+                            port=port,
+                            dbname=dbname,
+                            user=user,
+                            password=password) as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(sql.SQL("TRUNCATE {table}").format(table=sql.Identifier(table)))
+            template_query = sql.SQL("INSERT INTO {table} ({user_id}, {item_id}, {prediction}) VALUES {values}")
+            values = ','.join(cursor.mogrify("(%s,%s,%s)", record).decode() for record in records)
+            query = template_query.format(user_id=sql.Identifier(columns[0]),
+                                  item_id=sql.Identifier(columns[1]),
+                                  prediction=sql.Identifier(columns[3]),
+                                  table=sql.Identifier(table),
+                                  values=sql.SQL(values))
+            cursor.execute(query)
