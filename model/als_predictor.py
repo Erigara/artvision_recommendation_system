@@ -5,11 +5,14 @@
 
 Module implement rating predictor based on ALS matrix decomposition
 """
-
+import multiprocessing as mp
+import ctypes
 import numpy as np
 import pandas as pd
 from scipy import sparse as sps
 from collections import namedtuple, defaultdict
+from multiprocessing import Pool
+
 from model.utils.sparse_matrix_operations import (row_means_nonzero, 
                                                   col_means_nonzero)
 from model.utils.metrics import reg_rmse, reg_se
@@ -81,18 +84,66 @@ class ALS:
         return : np.array
             predicted ratings
         """
+        def predict_worker(tuple_rows, size, queue, raw_predictions):
+            predictions = np.reshape(np.frombuffer(raw_predictions), (size, ))
+            while True:
+                job = queue.get()
+                if job == None:
+                    break
+                start, stop = job[0], job[0] + job[1]
+                for i in range(start, stop):
+                    predictions[i] = self.predict_single(*tuple_rows[i])
+                queue.task_done()
+            queue.task_done()
+            
         if not self.initilized:
             logging.error('predictor must be fitted first!')
             raise RuntimeError('predictor must be fitted first!')
             
-        ratings_hat = []
-        for user, item in zip(data.df[data.user_col_name], data.df[data.item_col_name]):
-            rating_hat = self.predict_single(user, item)
-            ratings_hat.append(rating_hat)
-
-        rating_hat = np.array(ratings_hat)
+        size = len(data.df)
+        tuple_rows =  list(zip(data.df[data.user_col_name], data.df[data.item_col_name]))
         
-        data.df[data.prediction_col_name] = rating_hat
+        # create shared memory array
+        raw_predictions = mp.RawArray(ctypes.c_double, size)
+        
+        n_cpu  = mp.cpu_count()
+        n_jobs = n_cpu
+        
+        q = size // n_jobs
+        r = size  % n_jobs
+ 
+        # spread colums ids matrix between jobs
+        jobs = []
+        first_col = 0
+        for i in range(n_jobs):
+            cols_in_job = q
+            if (r > 0):
+                cols_in_job += 1
+                r -= 1
+            jobs.append((first_col, cols_in_job))
+            first_col += cols_in_job
+        
+        queue = mp.JoinableQueue()
+        for job in jobs:
+            queue.put(job)
+        for i in range(n_cpu):
+            queue.put(None)
+        
+        # run workers
+        workers = []
+        for i in range(n_cpu):
+            worker = mp.Process(target = predict_worker,
+                            args = (tuple_rows, size, queue, raw_predictions))
+            workers.append(worker)
+            worker.start()
+        
+        queue.join()
+        
+        # make array from shared memory    
+        predictions = np.reshape(np.frombuffer(raw_predictions), (size,))
+        
+        data.df[data.prediction_col_name] = predictions
+        
         return data
     
     def predict_single(self, user, item):
