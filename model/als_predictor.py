@@ -10,7 +10,7 @@ import ctypes
 import numpy as np
 import pandas as pd
 from scipy import sparse as sps
-from collections import namedtuple, defaultdict
+from collections import namedtuple, defaultdict, OrderedDict
 from multiprocessing import Pool
 
 from model.utils.sparse_matrix_operations import (row_means_nonzero, 
@@ -84,6 +84,7 @@ class ALS:
         return : np.array
             predicted ratings
         """
+
         def predict_worker(tuple_rows, size, queue, raw_predictions):
             predictions = np.reshape(np.frombuffer(raw_predictions), (size, ))
             while True:
@@ -143,7 +144,7 @@ class ALS:
         predictions = np.reshape(np.frombuffer(raw_predictions), (size,))
         
         data.df[data.prediction_col_name] = predictions
-        
+       
         return data
     
     def predict_single(self, user, item):
@@ -159,7 +160,33 @@ class ALS:
             #logging.warning('invalid ids pair ({}, {}) in user_item_iterable'.format(user, item))
             rating_hat = np.nan
         return rating_hat
-            
+      
+    def predict_for_user(self, user):
+        if not self.initilized:
+            logging.error('predictor must be fitted first!')
+            raise RuntimeError('predictor must be fitted first!')
+        try:
+            # map ids to inner ids
+            dense_user = self.user_ids_mapping[user]
+            rating_hat = (self.M.T @ self.U[:, dense_user]).flatten()
+        except KeyError:
+            #logging.warning('invalid ids pair ({}, {}) in user_item_iterable'.format(user, item))
+            rating_hat = np.nan
+        return rating_hat
+    
+    def predict_for_item(self, item):
+        if not self.initilized:
+            logging.error('predictor must be fitted first!')
+            raise RuntimeError('predictor must be fitted first!')
+        try:
+            # map ids to inner ids
+            dense_item = self.idem_ids_mapping[item]
+            rating_hat = (self.U.T @ self.M[:, dense_item]).flatten()
+        except KeyError:
+            #logging.warning('invalid ids pair ({}, {}) in user_item_iterable'.format(user, item))
+            rating_hat = np.nan
+        return rating_hat
+    
     def fit(self, train_data,
                   test_data,
                   test_metric=reg_rmse,
@@ -242,8 +269,8 @@ class ALS:
         dense_user_ids = user_ids.rank(method='dense').astype('int64') - 1
         dense_item_ids = item_ids.rank(method='dense').astype('int64') - 1
         
-        self.user_ids_mapping = dict(user_id_pair for user_id_pair in zip(user_ids, dense_user_ids))
-        self.item_ids_mapping = dict(item_id_pair for item_id_pair in zip(item_ids, dense_item_ids))
+        self.user_ids_mapping = OrderedDict(user_id_pair for user_id_pair in zip(user_ids, dense_user_ids))
+        self.item_ids_mapping = OrderedDict(item_id_pair for item_id_pair in zip(item_ids, dense_item_ids))
         
         
         ratings = train_data.df[train_data.rating_col_name]
