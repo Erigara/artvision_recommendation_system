@@ -6,6 +6,8 @@
 Module provide postprocessing functions
 """
 import pandas as pd
+import logging
+import time
 from data_loaders.rating_data import RatingData
 
 def truncate_rating(data, lower_bound, upper_bound):
@@ -55,8 +57,9 @@ def make_recommendation_userwise(model, columns, top_n=5):
     item_ids = model.get_item_ids()
     user_ids = model.get_user_ids()
     
-    recommendation = pd.DataFrame(columns = [columns[0], columns[1], columns[3]])
-    for user_id in user_ids:
+    recommendations = []
+    start_time = time.time()
+    for i, user_id in enumerate(user_ids):
         if item_ids:
             frame = pd.DataFrame({columns[0] : [user_id for item_id in item_ids], 
                                   columns[1] : [item_id for item_id in item_ids]})
@@ -64,8 +67,11 @@ def make_recommendation_userwise(model, columns, top_n=5):
             user_data = RatingData(frame, *columns)
             user_data = model.predict(user_data)
             top_n_df = user_data.df.nlargest(top_n, user_data.prediction_col_name)
-            recommendation = pd.concat([recommendation, top_n_df])
-    return RatingData(recommendation, *columns)
+            recommendations.append(top_n_df)
+        if i % 1000 == 0:
+            logging.info(f'Process {i} users within {time.time() - start_time} seconds')
+    recommendations = pd.concat(recommendations)
+    return RatingData(recommendations, *columns)
     
 def make_recommendation_itemwise(model, columns, top_n=100):
     """
@@ -86,8 +92,9 @@ def make_recommendation_itemwise(model, columns, top_n=100):
     item_ids = model.get_item_ids()
     user_ids = model.get_user_ids()
     
-    recommendation = pd.DataFrame(columns = [columns[0], columns[1], columns[3]])
-    for item_id in item_ids:
+    recommendations = []
+    start_time = time.time()
+    for i, item_id in enumerate(item_ids):
         if user_ids:
             frame = pd.DataFrame({columns[0] : [user_id for user_id in user_ids], 
                                   columns[1] : [item_id for user_id in user_ids]})
@@ -95,5 +102,8 @@ def make_recommendation_itemwise(model, columns, top_n=100):
             item_data = RatingData(frame, *columns)
             item_data = model.predict(item_data)
             top_n_df = item_data.df.nlargest(top_n, item_data.prediction_col_name)
-            recommendation = pd.concat([recommendation, top_n_df])
-    return RatingData(recommendation, *columns)
+            recommendations.append(top_n_df)
+        if i % 1000 == 0:
+            logging.info(f'Process {i} items within {time.time() - start_time} seconds')
+    recommendations = pd.concat(recommendations)
+    return RatingData(recommendations, *columns)
