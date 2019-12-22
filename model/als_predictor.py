@@ -31,10 +31,10 @@ class ALS:
     """
     TrainStruct = namedtuple('TrainStruct', ['compute_u',
                                              'compute_m',
+                                             'user_subset',
+                                             'item_subset',
                                              'user_I',
-                                             'item_I',
-                                             'users_len',
-                                             'items_len'])
+                                             'item_I'])
     
     def __init__(self, features=10, regularization='l2', lmbda = 0.3):
         """
@@ -71,8 +71,10 @@ class ALS:
         # matrix that represent items
         self.M = None
         # use inner sequential dense ids
-        self.user_ids_mapping = None
-        self.item_ids_mapping = None
+        self.users_len = 0
+        self.items_len = 0
+        self.user_ids_mapping = OrderedDict()
+        self.item_ids_mapping = OrderedDict()
         
     def predict(self, data):
         """
@@ -263,29 +265,41 @@ class ALS:
         return : ALS.TrainStruct
             namedtuple of additional data structures
         """
+        assert len(train_data.df) != 0
         user_ids = train_data.df[train_data.user_col_name]
         item_ids = train_data.df[train_data.item_col_name]
-        
-        dense_user_ids = user_ids.rank(method='dense').astype('int64') - 1
-        dense_item_ids = item_ids.rank(method='dense').astype('int64') - 1
-        
-        self.user_ids_mapping = OrderedDict(user_id_pair for user_id_pair in zip(user_ids, dense_user_ids))
-        self.item_ids_mapping = OrderedDict(item_id_pair for item_id_pair in zip(item_ids, dense_item_ids))
-        
-        
         ratings = train_data.df[train_data.rating_col_name]
         
-        users_len = int(max(dense_user_ids) + 1)
-        items_len = int(max(dense_item_ids) + 1)
+        inner_user_ids = []
+        inner_item_ids = []
+        new_users_len = self.users_len
+        new_items_len = self.items_len
+        for user, item in zip(user_ids, item_ids):
+            if not user in self.user_ids_mapping:
+                self.user_ids_mapping[user] = new_users_len
+                new_users_len += 1
+            inner_user_ids.append(self.user_ids_mapping[user])
+            
+            if not item in self.item_ids_mapping:
+                self.item_ids_mapping[item] = new_items_len
+                new_items_len += 1
+            inner_item_ids.append(self.item_ids_mapping[item])
+            
+        dense_user_ids = pd.Series(inner_user_ids).rank(method='dense').astype('int64') - 1
+        dense_item_ids = pd.Series(inner_item_ids).rank(method='dense').astype('int64') - 1
         
-        # init matrices U and M
-        if self.U is None:    
-            self.U = self.init_U(dense_user_ids, dense_item_ids, ratings, users_len)
-        if self.M is None:
-            self.M = self.init_M(dense_user_ids, dense_item_ids, ratings, items_len)
+        # update matrices U and M
+        self.U = self.update_matrix(self.U, dense_user_ids, dense_item_ids, 
+                                    ratings, new_users_len, self.users_len)
+        self.M = self.update_matrix(self.M, dense_item_ids, dense_user_ids, 
+                                    ratings, new_items_len, self.items_len)
+        
+        self.users_len = new_users_len
+        self.items_len = new_items_len
         
         tmp_df = pd.DataFrame({train_data.user_col_name : dense_user_ids,
                                train_data.item_col_name : dense_item_ids})
+        
         # create user_I dict containing for key user np.array of items witch user rate
         user_I = defaultdict(lambda : np.array([], dtype=int))
         user_groups = tmp_df.groupby(train_data.user_col_name)[train_data.item_col_name]
@@ -298,52 +312,50 @@ class ALS:
         for item in sorted(item_groups.groups):
             item_I[item] = item_groups.get_group(item).to_numpy().astype(int)
         
-        compute_u = self.create_compute_u(dense_user_ids, dense_item_ids, ratings, user_I)
-        compute_m = self.create_compute_m(dense_user_ids, dense_item_ids, ratings, item_I)
+        # create subset cols for users and items
+        user_subset = sorted(list(set(inner_user_ids)))
+        item_subset = sorted(list(set(inner_item_ids)))
+        
+        compute_u = self.create_compute_u(dense_user_ids, dense_item_ids, ratings, item_subset, user_I)
+        compute_m = self.create_compute_m(dense_user_ids, dense_item_ids, ratings, user_subset, item_I)
 
         self.initilized = True
 
-        return ALS.TrainStruct(compute_u, compute_m, user_I, item_I, users_len, items_len)
-
-    def init_U(self, users, items, ratings, users_len):
+        return ALS.TrainStruct(compute_u, compute_m, user_subset, item_subset, user_I, item_I)
+    
+    def update_matrix(self, matrix, rows, cols, ratings, new_cols_amount, old_cols_amount):
         """
-        Initialize matrix U so that it first row contain user's means
+        Update given matrix so that it add new columns to matrix
+        and init it's first row to have nonzero rows means of matrix R
         
-        train_data : RatingData
-            rating data to train
+        matrix : np.array
+            matrix to be updated
 
-        items_len : int
-            amount of items
-
+        new_cols_amount : int
+            new amount of columns in matrix
+        
+        old_cols_amount : int
+            old amount of columns in matrix
+            
         return : np.array
-            initilized matrix U
+            updated matrix
         """
         row_R = sps.csr_matrix((ratings, 
-                                (users, 
-                                 items)))
-        U = np.random.randn(self.features, users_len)
-        U[0, :] = row_means_nonzero(row_R)
-        return U
-    
-    def init_M(self, users, items, ratings, items_len):
-        """
-        Initialize matrix M so that it first row contain item's means
-
-        train_data : RatingData
-            rating data to train
-
-        items_len : int
-            amount of items
-
-        return : np.array
-            initilized matrix M
-        """
-        col_R = sps.csc_matrix((ratings, 
-                                (users, 
-                                 items)))
-        M = np.random.randn(self.features, items_len)
-        M[0, :] = col_means_nonzero(col_R)
-        return M
+                                (rows, 
+                                 cols)))
+        
+        delta_cols = new_cols_amount - old_cols_amount
+        if delta_cols != 0:
+            addition_matrix = np.random.randn(self.features, delta_cols)
+            addition_matrix[0, :] = row_means_nonzero(row_R)[-delta_cols:]
+            
+            if matrix is None:
+                new_matrix = addition_matrix
+            else:
+                new_matrix = np.append(matrix, addition_matrix, axis=1)
+        else:
+            new_matrix = matrix
+        return new_matrix
 
     def optimization_step(self, train_struct):
         """
@@ -357,15 +369,15 @@ class ALS:
         """
         compute_U = ComputeMatrix(lambda : train_struct.compute_u, 
                                   self.features, 
-                                  train_struct.users_len)
+                                  len(train_struct.user_subset))
         compute_M = ComputeMatrix(lambda : train_struct.compute_m, 
                                   self.features, 
-                                  train_struct.items_len)
+                                  len(train_struct.item_subset))
 
-        self.U = compute_U.compute_parallel()
-        self.M = compute_M.compute_parallel()
+        self.U[:, train_struct.user_subset] = compute_U.compute_parallel()
+        self.M[:, train_struct.item_subset] = compute_M.compute_parallel()
   
-    def create_compute_u(self, users, items, ratings, user_I):
+    def create_compute_u(self, users, items, ratings, subset_cols, user_I):
         """
         Create function to compute column of U by it's index
         
@@ -394,17 +406,18 @@ class ALS:
             return : np.array with shape (self.features, )
                 new column i of matrix U
             """
+            subM = self.M[:, subset_cols]
             I_i = user_I[i]
             n_i = len(I_i) if self.regularization == 'wl2' else 1
-            M_i = self.M[:, I_i]
+            M_i = subM[:, I_i]
             A_i = M_i @ M_i.T + lmbda * n_i * E
             V_i = M_i @ row_R[i, I_i].T
             u_i = np.linalg.solve(A_i, V_i)
-            return u_i.flatten()
+            return u_i.flatten() 
         
         return compute_u
     
-    def create_compute_m(self, users, items, ratings, item_I):
+    def create_compute_m(self, users, items, ratings, subset_cols, item_I):
         """
         Create function to compute column of M by it's index
         
@@ -433,9 +446,10 @@ class ALS:
             return : np.array with shape (self.features, )
                 new column j of matrix M
             """
+            subU = self.U[:, subset_cols]
             I_j = item_I[j]
             n = len(I_j) if self.regularization == 'wl2' else 1
-            U_j = self.U[:, I_j]
+            U_j = subU[:, I_j]
             A_j = U_j @ U_j.T + lmbda * n * E
             V_j = U_j @ col_R[I_j, j]
             m_j = np.linalg.solve(A_j, V_j)
