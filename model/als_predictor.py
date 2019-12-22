@@ -376,85 +376,62 @@ class ALS:
 
         self.U[:, train_struct.user_subset] = compute_U.compute_parallel()
         self.M[:, train_struct.item_subset] = compute_M.compute_parallel()
-  
-    def create_compute_u(self, users, items, ratings, subset_cols, user_I):
+        
+    def _create_compute(self, matrix_name, rows, cols, ratings, subset_cols, I):
         """
-        Create function to compute column of U by it's index
+        Create function to compute column of matrix by it's index
         
-        train_data : RatingData
-            rating data to train
+        rows : arraylike
+            row indices
+            
+        cols : arraylike
+            column indices
         
-        user_I : dict
-            dict containing for key user np.array of items witch user rate
+        ratings : arraylike
+            values of matrix R where R[i, j] = r[k] with k so that rows[k] = i 
+            and cols[k] = j
+        
+        subset_cols : arraylike
+            indices of matrix used to compute column
+        
+        I : arraylike
+            arraylike structur where element I[i] arraylike containing columns of matrix R 
+            so that intersection of row i and this columns has not 0 values
             
         return : function
             function to compute columns of U
         """
         row_R = sps.csr_matrix((ratings, 
-                                (users, 
-                                 items)))
+                                (rows, 
+                                 cols)))
         E = np.eye(self.features)
         lmbda = self.lmbda
         
-        def compute_u(i):
+        def compute_column(i):
             """
-            Compute column i of matrix U
+            Compute column i of matrix
         
             i : int 
-                index of column U
+                index of matrix's column
         
-            return : np.array with shape (self.features, )
-                new column i of matrix U
+            return : np.array
+                new column i of matrix with shape (self.features, )
             """
-            subM = self.M[:, subset_cols]
-            I_i = user_I[i]
+            submatrix = getattr(self, matrix_name)[:, subset_cols]
+            I_i = I[i]
             n_i = len(I_i) if self.regularization == 'wl2' else 1
-            M_i = subM[:, I_i]
-            A_i = M_i @ M_i.T + lmbda * n_i * E
-            V_i = M_i @ row_R[i, I_i].T
-            u_i = np.linalg.solve(A_i, V_i)
-            return u_i.flatten() 
-        
-        return compute_u
+            matrix_i = submatrix[:, I_i]
+            A_i = matrix_i @ matrix_i.T + lmbda * n_i * E
+            V_i = matrix_i @ row_R[i, I_i].T
+            column_i = np.linalg.solve(A_i, V_i)
+            return column_i.flatten()
+        return compute_column
+    
+    def create_compute_u(self, users, items, ratings, subset_cols, user_I):
+        return self._create_compute('M', users, items, ratings, subset_cols, user_I)
     
     def create_compute_m(self, users, items, ratings, subset_cols, item_I):
-        """
-        Create function to compute column of M by it's index
-        
-        train_data : RatingData
-            rating data to train
-        
-        item_I : dict 
-            dict containing for key item np.array of users whom rate this item
-            
-        return : function
-            function to compute columns of M
-        """      
-        col_R = sps.csc_matrix((ratings, 
-                                (users, 
-                                 items)))
-        E = np.eye(self.features)
-        lmbda = self.lmbda
-        
-        def compute_m(j):
-            """
-            Compute column j of matrix M
-        
-            j : int
-                index of column M
-        
-            return : np.array with shape (self.features, )
-                new column j of matrix M
-            """
-            subU = self.U[:, subset_cols]
-            I_j = item_I[j]
-            n = len(I_j) if self.regularization == 'wl2' else 1
-            U_j = subU[:, I_j]
-            A_j = U_j @ U_j.T + lmbda * n * E
-            V_j = U_j @ col_R[I_j, j]
-            m_j = np.linalg.solve(A_j, V_j)
-            return m_j.flatten()
-        return compute_m
+        return self._create_compute('U', items, users, ratings, subset_cols, item_I)
     
     def weighted_reg_penalty(self, train_struct):
         """
