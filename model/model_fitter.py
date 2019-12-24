@@ -9,6 +9,7 @@ train model iteratively
 import queue
 import threading
 import os
+import logging
 
 from utils.serializer import save_model, load_model
 from utils.worker import template_worker
@@ -136,15 +137,18 @@ class ModelFitter:
         model = load_model(self.model_path)
         if model is None:
             model = self.model_class(**self.model_params)
+        logging.debug('Load model')
         
         # train model
         train_data, test_data = data
         trainer = self.trainer_class(model, **self.trainer_params)
         trainer.fit(train_data, test_data, **self.fit_params)
+        logging.debug('Train model')
         # do something with losses
         
         # save model
         save_model(model, self.model_path)
+        logging.debug('Save model')
 
     def fitter_worker(self):
         """
