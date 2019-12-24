@@ -9,7 +9,7 @@ Module provide preprocessing functions
 
 import pandas as pd
 import numpy as np
-from data_loaders import RatingData
+from database.rating_data import RatingData
 
 def groupsize_filter(rating_data, by, min_groupsize=0):
     """

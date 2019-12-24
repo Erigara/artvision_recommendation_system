@@ -5,10 +5,6 @@
 
 Module provide postprocessing functions
 """
-import pandas as pd
-import logging
-import time
-from data_loaders.rating_data import RatingData
 
 def truncate_rating(data, lower_bound, upper_bound):
             """

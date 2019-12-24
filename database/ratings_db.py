@@ -11,9 +11,9 @@ from psycopg2 import pool as pgpool
 from psycopg2 import sql
 import pandas as pd
 
-from data_loaders.rating_data import RatingData
+from database.rating_data import RatingData
 
-class RatingDB:
+class RatingsDB:
     def __init__(self, host, port, dbname, table, columns, user, password,
                  minconn=2, maxconn=10):
         self.pool = pgpool.ThreadedConnectionPool(minconn=minconn, 
@@ -169,3 +169,33 @@ class RatingDB:
             fetched filtred data for given item_ids
         """
         return self._get_records_by_id(1, item_ids, min_records)
+    
+    def get_item_avg_ratings(self, min_records=10):
+        """
+        Get items avg rating for items that appeare at least min_records times in table.
+        
+         min_records : int
+            item_id appeare at least min_records times in records
+        
+        return : dict 
+            for key item_id hold item's avg rating
+        """
+        table = self.table
+        columns = self.columns
+        # get connection
+        conn  = self.pool.getconn()
+        
+        with conn.cursor(name='record_fetcher') as cursor:
+            cursor.itersize = 20000
+            template_query = sql.SQL('''SELECT {item_id}, AVG({rating})
+                                     FROM {table} 
+                                     GROUP BY {item_id}
+                                     HAVING count(1) >= %s''')
+            query = template_query.format(item_id=sql.Identifier(columns[1]),
+                                          rating=sql.Identifier(columns[2]),
+                                          table=sql.Identifier(table))
+            cursor.execute(query, [min_records, ])
+            avg_ratings = dict((item_id, rating) for item_id, rating in cursor)
+        # release the connection
+        self.pool.putconn(conn)
+        return avg_ratings
