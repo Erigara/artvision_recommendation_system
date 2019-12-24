@@ -96,6 +96,8 @@ class DataAbsorber:
         """
         self.reciever_queue.put(None)
         self.transmitter_queue.put(None)
+        self.reciever_queue.join()
+        self.transmitter_queue.join()
     
     def reciever_func(self, records):
         """
@@ -118,7 +120,7 @@ class DataAbsorber:
         logging.debug('User ids and Item ids extracted')
         
         self.transmitter_queue.put((user_ids, item_ids))
-        logging.debug('User ids and Item ids putted into transmitter queue')
+        logging.debug(f'User ids ({len(user_ids)}) and Item ids ({len(item_ids)}) putted into transmitter queue')
 
     def transmitter_func(self, ids):
         """
@@ -132,13 +134,16 @@ class DataAbsorber:
         user_ids, item_ids = ids
         if len(user_ids) < len(item_ids):
             train_data = self._db.get_records_by_user(user_ids, min_records=self.min_user_records)
+            logging.debug(f'User based train data ({len(train_data.df)})')
         else:
             train_data = self._db.get_records_by_item(item_ids, min_records=self.min_item_records)
+            logging.debug(f'Item based train data ({len(train_data.df)})')
         
         test_data = self._db.get_random_records(records_num=self.test_records_num)
+        logging.debug(f'Test data ({len(test_data.df)})')
         
         self.transmitter_callback((train_data, test_data))
-
+        logging.debug('Called transmitter callback')
     def reciever_worker(self):
         """
         Reciever worker loop
