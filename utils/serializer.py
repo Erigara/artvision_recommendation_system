@@ -4,6 +4,7 @@
 @author: erigara
 """
 import pickle
+import os.path
 
 
 def save_model(model, filename):
@@ -27,8 +28,11 @@ def load_model(filename):
         serilization file name
     
     return : model
-        deserilized model
+        deserilized model or None
     """
+    if  not os.path.isfile(filename):
+        return None
+    
     with open(filename, 'rb') as inpt:
         model = pickle.load(inpt)
         return model
