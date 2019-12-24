@@ -36,7 +36,7 @@ class ModelFitter:
 
     @model_path.setter
     def model_path(self, path):
-        if os.path.exists(path):
+        if os.path.exists(path) or os.access(os.path.dirname(path), os.W_OK):
             self._model_path = path
         else:
             raise ValueError(f'Unvalid path: {path} is given!')
