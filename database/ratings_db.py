@@ -13,7 +13,7 @@ import pandas as pd
 
 from data_loaders.rating_data import RatingData
 
-class AbsorberDB:
+class RatingDB:
     def __init__(self, host, port, dbname, table, columns, user, password,
                  minconn=2, maxconn=10):
         self.pool = pgpool.ThreadedConnectionPool(minconn=minconn, 
