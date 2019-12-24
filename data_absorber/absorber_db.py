@@ -48,7 +48,7 @@ class AbsorberDB:
             query = template_query.format(user_id=sql.Identifier(columns[0]),
                                           item_id=sql.Identifier(columns[1]),
                                           rating=sql.Identifier(columns[2]),
-                                          timestamp=sql.Identifier(columns[3]),
+                                          timestamp=sql.Identifier(columns[4]),
                                           table=sql.Identifier(table),
                                   values=sql.SQL(values))
             cursor.execute(query)

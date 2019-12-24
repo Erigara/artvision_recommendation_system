@@ -5,6 +5,7 @@
 
 Module implement record buffer used to store records with possibility to bind events on some actions
 """
+import logging
 
 class RecordBuffer:
     """
@@ -77,6 +78,7 @@ class RecordBuffer:
             
         if len(self._buffer) == self._buffer_size:
             self._on_full_buffer(self._buffer)
+            logging.debug('On full buffer callback called')
             # clear buffer
             self._buffer = []
     
