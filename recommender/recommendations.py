@@ -7,7 +7,7 @@
 import pandas as pd
 import logging
 import time
-from data_loaders.rating_data import RatingData
+from database.rating_data import RatingData
 
 def make_recommendation_for_user(model, user_id):
     if user_id in model.get_user_ids():
