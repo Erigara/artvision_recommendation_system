@@ -2,7 +2,10 @@
 # -*- coding: utf-8 -*-
 """
 @author: erigara
+
+Nodule implement db pool to get and insert rating data into database
 """
+
 import psycopg2
 from psycopg2 import pool as pgpool
 from psycopg2 import sql

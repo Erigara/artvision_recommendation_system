@@ -5,6 +5,7 @@
 
 Module implement record buffer used to store records with possibility to bind events on some actions
 """
+
 import logging
 
 class RecordBuffer:
