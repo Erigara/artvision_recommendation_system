@@ -11,6 +11,8 @@ import queue
 import threading
 import logging
 
+from utils.worker import template_worker
+
 class DataAbsorber:
     def __init__(self, db, min_user_records, min_item_records, test_records_num):
         self._db = db
@@ -136,34 +138,17 @@ class DataAbsorber:
         
         self.transmitter_callback((train_data, test_data))
 
-    def _template_worker(self, worker_func, queue):
-        """
-        Template implementation of worker loop
-        
-        worker_func : function
-            function called when worker get item from queue
-        
-        queue: queue.Queue
-            queue used to comunicate with worker
-        """
-        while True:
-            item = queue.get()
-            if item is None:
-                break
-            worker_func(item)
-            queue.task_done()
-
     def reciever_worker(self):
         """
         Reciever worker loop
         """
-        return self._template_worker(self.reciever_func, self.reciever_queue)
+        return template_worker(self.reciever_func, self.reciever_queue)
     
     def transmitter_worker(self):
         """
         Transmitter worker loop
         """
-        return self._template_worker(self.transmitter_func, self.transmitter_queue)
+        return template_worker(self.transmitter_func, self.transmitter_queue)
         
     def recieve_records(self, records):
         """
