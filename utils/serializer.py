@@ -18,7 +18,8 @@ def save_model(model, filename):
         serilization file name
     """
     with open(filename, 'wb') as output:
-        pickle.dump(model, output, pickle.HIGHEST_PROTOCOL)
+        pickled_model = pickle.dumps(model, pickle.HIGHEST_PROTOCOL)
+        output.write(pickled_model)
 
 def load_model(filename):
     """
