@@ -14,7 +14,7 @@ import logging
 from utils.worker import template_worker
 
 class DataAbsorber:
-    def __init__(self, db, min_user_records, min_item_records, test_records_num):
+    def __init__(self, db, transmitter_callback, min_user_records, min_item_records, test_records_num):
         self._db = db
         self.reciever_queue = queue.Queue()
         self.transmitter_queue = queue.Queue()
@@ -23,7 +23,8 @@ class DataAbsorber:
         self.min_user_records = min_user_records
         self.min_item_records = min_item_records
         self.test_records_num = test_records_num
-    
+        self.transmitter_callback = transmitter_callback
+
     @property
     def min_user_records(self):
         """
