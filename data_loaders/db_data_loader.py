@@ -32,10 +32,10 @@ def load_data(host, port, dbname, table, columns, user, password):
         dowloaded rating data
     '''
     with psycopg2.connect(host=host,
-                            port=port,
-                            dbname=dbname,
-                            user=user,
-                            password=password) as conn:
+                          port=port,
+                          dbname=dbname,
+                          user=user,
+                          password=password) as conn:
         with conn.cursor(name='record_fetcher') as cursor:
             cursor.itersize = 20000
             template_query = sql.SQL("SELECT {user_id}, {item_id}, {rating}, {timestamp} FROM {table}")

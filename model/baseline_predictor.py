@@ -48,7 +48,7 @@ class BaselinePredictor:
         with Pool() as p:
             data.df[data.prediction_col_name] = np.fromiter(p.starmap(self.predict_single, 
                                                                       zip(data.df[data.user_col_name], 
-                                                                          data.df[data.item_col_name])), 
+                                                                          data.df[data.item_col_name])),
                                                             dtype=np.float)
         return data
     
