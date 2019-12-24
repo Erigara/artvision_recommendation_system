@@ -10,7 +10,7 @@ import ctypes
 import numpy as np
 from collections import  OrderedDict
 
-from model.utils.sparse_matrix_operations import (row_means_nonzero, 
+from utils.sparse_matrix_operations import (row_means_nonzero, 
                                                   col_means_nonzero)
 
 import logging

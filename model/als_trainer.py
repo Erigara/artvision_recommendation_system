@@ -11,10 +11,10 @@ from scipy import sparse as sps
 from collections import namedtuple, defaultdict, OrderedDict
 from multiprocessing import Pool
 
-from model.utils.sparse_matrix_operations import (row_means_nonzero, 
+from utils.sparse_matrix_operations import (row_means_nonzero, 
                                                   col_means_nonzero)
-from model.utils.metrics import reg_rmse, reg_se
-from model.utils.compute_matrix import ComputeMatrix
+from utils.metrics import reg_rmse, reg_se
+from utils.compute_matrix import ComputeMatrix
 from model import Losses
 
 import logging
