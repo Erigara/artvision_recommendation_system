@@ -17,6 +17,7 @@ def template_worker(worker_func, queue):
     while True:
         item = queue.get()
         if item is None:
+            queue.task_done()
             break
         worker_func(item)
         queue.task_done()
